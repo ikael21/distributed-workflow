@@ -15,23 +15,21 @@ The system is intentionally designed to practice real-world backend engineering 
 
 ```bash
 distributed-workflow/
-├── compose.yml              # Docker Compose configuration
+├── infra/
+│   ├── envoy/               # Envoy API Gateway configuration
+│   └── compose.yml          # Docker Compose configuration
+│
+├── pkg/                     # Shared packages
+│
+├── services/
+│   ├── artifact/            # Artifact storage service
+│   ├── iam/                 # Identity and Access Management service
+│   ├── metadata/            # Metadata storage service
+│   ├── notification/        # Notification service
+│   ├── scheduler/           # Workflow/job scheduler service
+│   ├── worker/              # Distributed worker service
+│   └── workflow/            # Workflow definition and management service
+│
 ├── Makefile                 # Build automation and development commands
-├── README.md                # Project documentation
-├── .gitignore               # Git ignore rules
-│
-├── infra/                   # Infrastructure configuration
-│   └── envoy/               # Envoy API Gateway configuration
-│
-├── pkg/                     # Shared packages/libraries
-│   └── logger/              # Shared logging package
-│
-└── services/                # Microservices
-    ├── artifact/            # Artifact storage service
-    ├── iam/                 # Identity and Access Management service
-    ├── metadata/            # Metadata storage service (MongoDB)
-    ├── notification/        # Notification service
-    ├── scheduler/           # Workflow/job scheduler service
-    ├── worker/              # Distributed worker service
-    └── workflow/            # Workflow definition and management service
+└── README.md                # Project documentation
 ```
