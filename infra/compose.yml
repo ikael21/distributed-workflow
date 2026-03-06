@@ -1,0 +1,8 @@
+services:
+  iam:
+  metadata:
+  scheduler:
+  worker:
+  workflow:
+  notification:
+  artifact:
