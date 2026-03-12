@@ -13,7 +13,7 @@ import (
 )
 
 type GracefulShutdown interface {
-	Close(ctx context.Context) error
+	Close(context.Context) error
 }
 
 type manager struct {
@@ -46,8 +46,8 @@ func (m *manager) Wait() {
 	defer cancel()
 
 	var wg sync.WaitGroup
+	wg.Add(len(m.services))
 	for _, service := range m.services {
-		wg.Add(1)
 		go func(gs GracefulShutdown) {
 			defer wg.Done()
 
