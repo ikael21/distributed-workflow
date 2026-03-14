@@ -8,6 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 	"github.com/gin-contrib/logger"
+	"github.com/getkin/kin-openapi/openapi3"
+	oapiMiddleware "github.com/oapi-codegen/gin-middleware"
 )
 
 type Server struct {
@@ -20,6 +22,7 @@ type Config struct {
 	ReadTimeout  time.Duration
 	Logger       zerolog.Logger
 	Addr         string
+	Swagger      *openapi3.T
 }
 
 func NewServer(cfg Config) *Server {
@@ -32,6 +35,9 @@ func NewServer(cfg Config) *Server {
 			},
 		),
 	))
+	if cfg.Swagger != nil {
+		engine.Use(oapiMiddleware.OapiRequestValidator(cfg.Swagger))
+	}
 
 	srv := &http.Server{
 		WriteTimeout: cfg.WriteTimeout,
