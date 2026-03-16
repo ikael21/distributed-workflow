@@ -1,4 +1,4 @@
-package http
+package httpserver
 
 import (
 	"context"
@@ -8,11 +8,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 	"github.com/gin-contrib/logger"
-	"github.com/getkin/kin-openapi/openapi3"
-	oapiMiddleware "github.com/oapi-codegen/gin-middleware"
 )
 
-type Server struct {
+type server struct {
 	engine *gin.Engine
 	srv    *http.Server
 }
@@ -22,10 +20,10 @@ type Config struct {
 	ReadTimeout  time.Duration
 	Logger       zerolog.Logger
 	Addr         string
-	Swagger      *openapi3.T
+	Middlewares  []gin.HandlerFunc
 }
 
-func NewServer(cfg Config) *Server {
+func New(cfg Config) *server {
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 	engine.Use(logger.SetLogger(
@@ -35,8 +33,9 @@ func NewServer(cfg Config) *Server {
 			},
 		),
 	))
-	if cfg.Swagger != nil {
-		engine.Use(oapiMiddleware.OapiRequestValidator(cfg.Swagger))
+
+	if len(cfg.Middlewares) > 0 {
+		engine.Use(cfg.Middlewares...)
 	}
 
 	srv := &http.Server{
@@ -46,20 +45,20 @@ func NewServer(cfg Config) *Server {
 		Addr:         cfg.Addr,
 	}
 
-	return &Server{
+	return &server{
 		engine: engine,
 		srv:    srv,
 	}
 }
 
-func (s *Server) Router() *gin.Engine {
-	return s.engine
+func (s *server) SetupRoutes(setup func(*gin.Engine)) {
+	setup(s.engine)
 }
 
-func (s *Server) Start() error {
+func (s *server) Start() error {
 	return s.srv.ListenAndServe()
 }
 
-func (s *Server) Close(ctx context.Context) error {
+func (s *server) Close(ctx context.Context) error {
 	return s.srv.Shutdown(ctx)
 }
