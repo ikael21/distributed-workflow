@@ -17,22 +17,26 @@ type PostgresConfig struct {
 	ConnMaxLifetime time.Duration
 }
 
-type postgres struct {
+type Postgres struct {
 	DB *bun.DB
 }
 
-func NewPostgres(cfg PostgresConfig) (*postgres, error) {
+func NewPostgres(ctx context.Context, cfg PostgresConfig) (*Postgres, error) {
 	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(cfg.DSN)))
 	sqldb.SetMaxOpenConns(cfg.MaxOpenConns)
 	sqldb.SetMaxIdleConns(cfg.MaxIdleConns)
 	sqldb.SetConnMaxLifetime(cfg.ConnMaxLifetime)
 
 	db := bun.NewDB(sqldb, pgdialect.New())
-	err := db.PingContext(context.Background())
+	err := db.PingContext(ctx)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
 
-	return &postgres{DB: db}, err
+	return &Postgres{DB: db}, nil
 }
 
-func (p *postgres) Close(_ context.Context) error {
+func (p *Postgres) Close(_ context.Context) error {
 	return p.DB.Close()
 }

@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -21,7 +22,7 @@ type Config struct {
 func NewLogger(cfg Config) (zerolog.Logger, error) {
 	level, err := zerolog.ParseLevel(cfg.Level)
 	if err != nil {
-		return zerolog.Logger{}, err
+		return zerolog.Logger{}, fmt.Errorf("parse log level %q: %w", cfg.Level, err)
 	}
 
 	zerolog.SetGlobalLevel(level)

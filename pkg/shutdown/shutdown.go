@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"slices"
 	"sync"
 	"syscall"
 	"time"
@@ -12,29 +13,40 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// GracefulShutdown is implemented by components that release resources when the
+// process is stopping (HTTP servers, connection pools, workers, etc.).
 type GracefulShutdown interface {
 	Close(context.Context) error
 }
 
-type manager struct {
-	logger   zerolog.Logger
-	services []GracefulShutdown
-	timeout  time.Duration
+// Manager runs registered services in ordered phases after SIGINT/SIGTERM.
+// Lower phase numbers complete first; within a phase, services close in parallel.
+// A typical layout is phase 0 for HTTP (or RPC) and phase 1 for databases.
+type Manager struct {
+	logger  zerolog.Logger
+	phases  map[int][]GracefulShutdown
+	timeout time.Duration
 }
 
-func NewManager(timeout time.Duration, logger zerolog.Logger) *manager {
-	return &manager{
-		services: []GracefulShutdown{},
+// NewManager builds a shutdown coordinator. timeout bounds the entire shutdown
+// sequence (all phases); a single context is passed to every Close call.
+func NewManager(timeout time.Duration, logger zerolog.Logger) *Manager {
+	return &Manager{
+		logger:  logger,
+		phases:  make(map[int][]GracefulShutdown),
 		timeout: timeout,
-		logger: logger,
 	}
 }
 
-func (m *manager) Register(gs GracefulShutdown) {
-	m.services = append(m.services, gs)
+// Register adds a service to a phase. Phases run in ascending order (0, 1, 2…).
+// Multiple Register calls with the same phase append to that phase’s group.
+func (m *Manager) Register(phase int, gs GracefulShutdown) {
+	m.phases[phase] = append(m.phases[phase], gs)
 }
 
-func (m *manager) Wait() {
+// Wait blocks until a shutdown signal, then runs phases in order until the
+// global timeout elapses or every Close returns.
+func (m *Manager) Wait() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(quit)
@@ -45,31 +57,45 @@ func (m *manager) Wait() {
 	ctx, cancel := context.WithTimeout(context.Background(), m.timeout)
 	defer cancel()
 
-	var wg sync.WaitGroup
-	wg.Add(len(m.services))
-	for _, service := range m.services {
-		go func(gs GracefulShutdown) {
-			defer wg.Done()
+	keys := make([]int, 0, len(m.phases))
+	for k := range m.phases {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
 
-			gsLogger := m.logger.With().Str("component", fmt.Sprintf("%T", gs)).Logger()
-			if err := gs.Close(ctx); err != nil {
-				gsLogger.Error().Err(err).Msg("service shutdown failed")
-				return
-			}
-			gsLogger.Info().Msg("stopped service")
-		}(service)
+	for _, phase := range keys {
+		services := m.phases[phase]
+		m.logger.Info().Int("phase", phase).Msg("shutdown phase started")
+
+		var wg sync.WaitGroup
+		wg.Add(len(services))
+		for _, service := range services {
+			go func(gs GracefulShutdown) {
+				defer wg.Done()
+
+				gsLogger := m.logger.With().Str("component", fmt.Sprintf("%T", gs)).Logger()
+				if err := gs.Close(ctx); err != nil {
+					gsLogger.Error().Err(err).Msg("service shutdown failed")
+					return
+				}
+				gsLogger.Info().Msg("stopped service")
+			}(service)
+		}
+
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			wg.Wait()
+		}()
+
+		select {
+		case <-done:
+			m.logger.Info().Int("phase", phase).Msg("phase complete")
+		case <-ctx.Done():
+			m.logger.Warn().Err(ctx.Err()).Int("phase", phase).Msg("shutdown timeout during phase")
+			return
+		}
 	}
 
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		wg.Wait()
-	}()
-
-	select {
-	case <-done:
-		m.logger.Info().Msg("all services gracefully shutdown")
-	case <-ctx.Done():
-		m.logger.Warn().Err(ctx.Err()).Msg("shutdown timeout reached")
-	}
+	m.logger.Info().Msg("all shutdown phases complete")
 }

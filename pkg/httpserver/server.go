@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -10,17 +11,24 @@ import (
 	"github.com/gin-contrib/logger"
 )
 
+type RouteModule interface {
+	RegisterRoutes(*gin.Engine)
+}
+
 type server struct {
-	engine *gin.Engine
 	srv    *http.Server
+	engine *gin.Engine
+	logger zerolog.Logger
 }
 
 type Config struct {
-	WriteTimeout time.Duration
-	ReadTimeout  time.Duration
-	Logger       zerolog.Logger
-	Addr         string
-	Middlewares  []gin.HandlerFunc
+	WriteTimeout      time.Duration
+	ReadTimeout       time.Duration
+	IdleTimeout       time.Duration
+	ReadHeaderTimeout time.Duration
+	Logger            zerolog.Logger
+	Addr              string
+	Middlewares       []gin.HandlerFunc
 }
 
 func New(cfg Config) *server {
@@ -39,24 +47,32 @@ func New(cfg Config) *server {
 	}
 
 	srv := &http.Server{
-		WriteTimeout: cfg.WriteTimeout,
-		ReadTimeout:  cfg.ReadTimeout,
-		Handler:      engine,
-		Addr:         cfg.Addr,
+		WriteTimeout:      cfg.WriteTimeout,
+		ReadTimeout:       cfg.ReadTimeout,
+		IdleTimeout:       cfg.IdleTimeout,
+		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
+		Handler:           engine,
+		Addr:              cfg.Addr,
 	}
 
 	return &server{
 		engine: engine,
 		srv:    srv,
+		logger: cfg.Logger,
 	}
 }
 
-func (s *server) SetupRoutes(setup func(*gin.Engine)) {
-	setup(s.engine)
+func (s *server) RegisterModules(mods ...RouteModule) {
+	for _, m := range mods {
+		m.RegisterRoutes(s.engine)
+	}
 }
 
-func (s *server) Start() error {
-	return s.srv.ListenAndServe()
+func (s *server) Start() {
+	s.logger.Info().Str("addr", s.srv.Addr).Msg("started")
+	if err := s.srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		s.logger.Fatal().Err(err).Msg("server failed")
+	}
 }
 
 func (s *server) Close(ctx context.Context) error {
