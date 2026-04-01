@@ -8,6 +8,9 @@ import (
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
 	"github.com/uptrace/bun/driver/pgdriver"
+
+	"github.com/rs/zerolog"
+	"github.com/uptrace/bun/extra/bunzerolog"
 )
 
 type PostgresConfig struct {
@@ -15,6 +18,7 @@ type PostgresConfig struct {
 	MaxOpenConns    int
 	MaxIdleConns    int
 	ConnMaxLifetime time.Duration
+	Logger          *zerolog.Logger
 }
 
 type Postgres struct {
@@ -28,6 +32,15 @@ func NewPostgres(ctx context.Context, cfg PostgresConfig) (*Postgres, error) {
 	sqldb.SetConnMaxLifetime(cfg.ConnMaxLifetime)
 
 	db := bun.NewDB(sqldb, pgdialect.New())
+	loggerHook := bunzerolog.NewQueryHook(
+		bunzerolog.WithLogger(cfg.Logger),
+		bunzerolog.WithQueryLogLevel(zerolog.DebugLevel),
+		bunzerolog.WithSlowQueryLogLevel(zerolog.WarnLevel),
+		bunzerolog.WithErrorQueryLogLevel(zerolog.ErrorLevel),
+		bunzerolog.WithSlowQueryThreshold(3 * time.Second),
+	)
+	db.AddQueryHook(loggerHook)
+
 	err := db.PingContext(ctx)
 	if err != nil {
 		db.Close()
