@@ -57,6 +57,12 @@ func (m *Manager) Wait() {
 	ctx, cancel := context.WithTimeout(context.Background(), m.timeout)
 	defer cancel()
 
+	if m.runPhases(ctx) {
+		m.logger.Info().Msg("all shutdown phases complete")
+	}
+}
+
+func (m *Manager) runPhases(ctx context.Context) bool {
 	keys := make([]int, 0, len(m.phases))
 	for k := range m.phases {
 		keys = append(keys, k)
@@ -93,9 +99,9 @@ func (m *Manager) Wait() {
 			m.logger.Info().Int("phase", phase).Msg("phase complete")
 		case <-ctx.Done():
 			m.logger.Warn().Err(ctx.Err()).Int("phase", phase).Msg("shutdown timeout during phase")
-			return
+			return false
 		}
 	}
 
-	m.logger.Info().Msg("all shutdown phases complete")
+	return true
 }
